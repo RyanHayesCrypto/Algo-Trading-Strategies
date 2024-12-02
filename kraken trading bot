@@ -2,8 +2,8 @@ import ccxt
 
 kraken = ccxt.kraken({
     'enableRateLimit': True,
-    'apiKey': '7JLoXhhQfqmulT4dI4q5pvsSR5p4S2pwwcrkMsaOmr67MniZaPEZYON6',
-    'secret': 'geEwIdK6UnehiYldxnHTsZhJ2NZXqxXxxfbKzjMlmNiF4CDMQ8A4jGjJUSOYyBLEHcQHo5kDD+s8b9ndSYfQiQ==',
+    'apiKey': '**********',
+    'secret': '******',
 })
 # retrieving balance 
 print(kraken.fetch_balance())
