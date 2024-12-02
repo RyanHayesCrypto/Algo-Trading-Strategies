@@ -1,0 +1,34 @@
+import ccxt
+
+kraken = ccxt.kraken({
+    'enableRateLimit': True,
+    'apiKey': '7JLoXhhQfqmulT4dI4q5pvsSR5p4S2pwwcrkMsaOmr67MniZaPEZYON6',
+    'secret': 'geEwIdK6UnehiYldxnHTsZhJ2NZXqxXxxfbKzjMlmNiF4CDMQ8A4jGjJUSOYyBLEHcQHo5kDD+s8b9ndSYfQiQ==',
+})
+# retrieving balance 
+print(kraken.fetch_balance())
+# retrieving symbols
+kraken.load_markets()
+markets = kraken.load_markets()
+print(markets.keys())
+
+# retrieving the best bid/ask spread
+def get_bid_ask():
+
+
+    btc_book = kraken.fetch_order_book('BTC/USDC')
+    print(btc_book)
+    btc_bid = btc_book["bids"][0][0]
+    btc_ask = btc_book["asks"][0][0]
+    print(f"the best bid: {btc_bid}) the best ask: {btc_ask}")
+
+get_bid_ask()
+
+# submitting a limit order
+symbol = 'BTC/USDC'
+pos_size = 1
+mybid = get_bid_ask()[0]
+mybid = mybid - 1000
+
+kraken.create_limit_buy_order(symbol, pos_size, mybid)
+
