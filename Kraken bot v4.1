@@ -1,0 +1,187 @@
+#crypto bot v.4.1
+
+import ccxt
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+kraken = ccxt.kraken({
+    'enableRateLimit': True,
+    'apiKey': '$$$$$$$$$',
+    'secret': '$$$$$$$$$$$,
+})
+
+# List of cryptocurrency pairs to fetch data for
+crypto_pairs = ['BTC/USDC', 'ETH/USDC']  # Add up to 50 pairs as needed
+
+# Dictionary to store OHLCV data for each cryptocurrency
+crypto_data = {}
+
+# Fetch OHLCV data for each cryptocurrency
+for pair in crypto_pairs:
+    try:
+        bars = kraken.fetch_ohlcv(pair, timeframe='1d', limit=1000)
+        df = pd.DataFrame(bars, columns=['timestamp', 'open', 'high', 'low', 'close', 'volume'])
+        df['timestamp'] = pd.to_datetime(df['timestamp'], unit='ms')  # Convert timestamp to readable format
+        crypto_data[pair] = df
+    except Exception as e:
+        print(f"Error fetching data for {pair}: {e}")
+
+# Function to calculate position size based on dollar amount
+def calculate_position_size(pair, usd_amount, df):
+    current_price = df['close'].iloc[-1]
+    position_size = usd_amount / current_price
+    return position_size
+
+# Fetch balance before placing trades
+def get_balance(currency):
+    try:
+        balance = kraken.fetch_balance()
+        available_balance = balance['free'][currency]
+        return available_balance
+    except Exception as e:
+        print(f"Error fetching balance: {e}")
+        return 0
+
+# Weighted Moving Average for HMA
+def wma(series, period):
+    weights = np.arange(1, period + 1)
+    return series.rolling(window=period).apply(lambda prices: np.dot(prices, weights) / weights.sum(), raw=True)
+
+# Hull Moving Average
+def hull_moving_average(df, period, column='close'):
+    half_length = period // 2
+    sqrt_length = int(np.sqrt(period))
+    wma_half = wma(df[column], half_length)
+    wma_full = wma(df[column], period)
+    diff = 2 * wma_half - wma_full
+    hma = wma(diff, sqrt_length)
+    return hma
+
+# Trade logic
+usd_trade_amount = 100  # Example: $100 per trade
+
+for pair, df in crypto_data.items():
+    print(f"Processing {pair}")
+
+    # SMA Crossover Strategy
+    df['sma30'] = df['close'].rolling(window=30).mean()
+    df['sma90'] = df['close'].rolling(window=90).mean()
+    df['buy_sma'] = (df['sma30'] > df['sma90']) & (df['sma30'].shift(1) <= df['sma90'].shift(1))
+    df['sell_sma'] = (df['sma30'] < df['sma90']) & (df['sma30'].shift(1) >= df['sma90'].shift(1))
+
+    # MACD Strategy
+    df['EMA12'] = df['close'].ewm(span=12).mean()
+    df['EMA26'] = df['close'].ewm(span=26).mean()
+    df['MACD'] = df['EMA12'] - df['EMA26']
+    df['signal'] = df['MACD'].ewm(span=9).mean()
+    df['buy_macd'] = (df['MACD'] > df['signal']) & (df['MACD'].shift(1) <= df['signal'].shift(1))
+    df['sell_macd'] = (df['MACD'] < df['signal']) & (df['MACD'].shift(1) >= df['signal'].shift(1))
+
+    # HMA Strategy
+    period = 21  # Example HMA period
+    df['hma'] = hull_moving_average(df, period)
+    df['buy_hma'] = (df['close'] > df['hma']) & (df['close'].shift(1) <= df['hma'].shift(1))
+    df['sell_hma'] = (df['close'] < df['hma']) & (df['close'].shift(1) >= df['hma'].shift(1))
+
+    # Combine Signals
+    df['buy_signal'] = df['buy_sma'] | df['buy_macd'] | df['buy_hma']
+    df['sell_signal'] = df['sell_sma'] | df['sell_macd'] | df['sell_hma']
+
+    # Visualize Strategies (Last 3 years)
+    #plt.figure(figsize=(12, 6))
+    #plt.plot(df['timestamp'], df['close'], label='Close Price', color='blue')
+    #plt.plot(df['timestamp'], df['sma30'], label='SMA 30', color='orange', linestyle='--')
+    #plt.plot(df['timestamp'], df['sma90'], label='SMA 90', color='red', linestyle='--')
+    #plt.plot(df['timestamp'], df['hma'], label='HMA', color='green', linestyle='--')
+    #plt.scatter(df['timestamp'][df['buy_signal']], df['close'][df['buy_signal']], label='Buy Signal', marker='^', color='green')
+    #plt.scatter(df['timestamp'][df['sell_signal']], df['close'][df['sell_signal']], label='Sell Signal', marker='v', color='red')
+    #plt.title(f'Trading Strategy Visualization for {pair}')
+    #plt.legend()
+    #plt.show()
+
+    # Filter data for the last 3 months
+last_three_months = df[df['timestamp'] >= (df['timestamp'].max() - pd.Timedelta(days=90))]
+
+# Visualize Strategies (Last 3 Months)
+plt.figure(figsize=(12, 6))
+plt.plot(last_three_months['timestamp'], last_three_months['close'], label='Close Price', color='blue')
+plt.plot(last_three_months['timestamp'], last_three_months['sma30'], label='SMA 30', color='orange', linestyle='--')
+plt.plot(last_three_months['timestamp'], last_three_months['sma90'], label='SMA 90', color='red', linestyle='--')
+plt.plot(last_three_months['timestamp'], last_three_months['hma'], label='HMA', color='green', linestyle='--')
+
+# Buy signals
+plt.scatter(last_three_months['timestamp'][last_three_months['buy_sma']], 
+            last_three_months['close'][last_three_months['buy_sma']], 
+            label='Buy Signal (SMA)', marker='^', color='green')
+plt.scatter(last_three_months['timestamp'][last_three_months['buy_macd']], 
+            last_three_months['close'][last_three_months['buy_macd']], 
+            label='Buy Signal (MACD)', marker='^', color='blue')
+plt.scatter(last_three_months['timestamp'][last_three_months['buy_hma']], 
+            last_three_months['close'][last_three_months['buy_hma']], 
+            label='Buy Signal (HMA)', marker='^', color='purple')
+
+# Sell signals
+plt.scatter(last_three_months['timestamp'][last_three_months['sell_sma']], 
+            last_three_months['close'][last_three_months['sell_sma']], 
+            label='Sell Signal (SMA)', marker='v', color='red')
+plt.scatter(last_three_months['timestamp'][last_three_months['sell_macd']], 
+            last_three_months['close'][last_three_months['sell_macd']], 
+            label='Sell Signal (MACD)', marker='v', color='orange')
+plt.scatter(last_three_months['timestamp'][last_three_months['sell_hma']], 
+            last_three_months['close'][last_three_months['sell_hma']], 
+            label='Sell Signal (HMA)', marker='v', color='yellow')
+
+# Title and labels
+plt.title(f'Trading Strategy Visualization for {pair} (Last 3 Months)')
+plt.legend()
+plt.show()
+
+# Execute Trades Based on Signals
+usd_trade_amount = 100  # Example: $100 per trade
+
+for pair, df in crypto_data.items():
+    print(f"Processing {pair}")
+
+    # Check balance before placing any orders
+    available_balance = get_balance('USDC')  # Replace with the appropriate currency (e.g., USDC)
+    
+    # If the balance is insufficient, stop further execution
+    if available_balance < usd_trade_amount:
+        print(f"Insufficient balance to place any trades for {pair}. Available: {available_balance} USDC")
+        continue  # Skip this pair and go to the next one
+
+    for i, row in df.iterrows():
+        if row['buy_signal']:
+            # Calculate position size for the buy signal
+            position_size = calculate_position_size(pair, usd_trade_amount, df)
+
+            try:
+                kraken.create_limit_buy_order(pair, position_size, row['close'])
+                print(f"Buy order placed for {pair}: {position_size} at {row['close']}")
+            except Exception as e:
+                print(f"Error placing buy order for {pair}: {e}")
+
+        if row['sell_signal']:
+            available_balance = get_balance(pair.split('/')[0])  # Check available balance for the base currency (e.g., BTC)
+
+            if available_balance > 0:
+                try:
+                    kraken.create_limit_sell_order(pair, available_balance, row['close'])
+                    print(f"Sell order placed for {pair}: {available_balance} at {row['close']}")
+                except Exception as e:
+                    print(f"Error placing sell order for {pair}: {e}")
+
+import time
+
+start_time = time.time()
+
+for pair, df in crypto_data.items():
+    print(f"Processing {pair}")
+    
+    # Stop after 10 seconds
+    if time.time() - start_time > 10:
+        print("Ending the script after 10 seconds.")
+        break  # This will stop the loop after 10 seconds
+
+    # Rest of your code...
